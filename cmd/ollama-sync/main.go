@@ -19,8 +19,12 @@ var (
 	destinations string
 )
 
-func displayWelcomeMessage() {
-	asciiArt := `
+// Application constants
+const (
+	AppName     = "Ollama Sync"
+	AppVersion  = "1.0.0"
+	Description = "A tool to bridge Ollama models with other tools (like LM Studio) seamlessly."
+	AsciiArt    = `
 	'||  '||                                                               
   ...    ||   ||   ....   .. .. ..    ....      ....  .... ... .. ...     ....  
 .|  '|.  ||   ||  '' .||   || || ||  '' .||    ||. '   '|.  |   ||  ||  .|   '' 
@@ -29,14 +33,58 @@ func displayWelcomeMessage() {
 													  .. |                      
 													   ''                       
 `
-	appName := "Ollama Sync"
-	version := "1.0.0"
-	description := "A tool to bridge Ollama models with other tools (like LM Studio) seamlessly."
+)
 
-	fmt.Println(asciiArt)
-	fmt.Printf("%s - Version %s\n", appName, version)
-	fmt.Println(description)
+func displayWelcomeMessage() {
+	fmt.Println(AsciiArt)
+	fmt.Printf("%s - Version %s\n", AppName, AppVersion)
+	fmt.Println(Description)
 	fmt.Println()
+}
+
+func applyCommandLineOverrides(cfg *config.Config) {
+	if manifestDir != "" {
+		cfg.ManifestDir = manifestDir
+	}
+	if blobDir != "" {
+		cfg.BlobDir = blobDir
+	}
+	if destinations != "" {
+		cfg.Destinations = strings.Split(destinations, ",")
+	}
+}
+
+func processManifests(cfg *config.Config, log *logrus.Logger) error {
+	manifestFiles, err := manifest.FindManifestFiles(cfg.ManifestDir)
+	if err != nil {
+		return fmt.Errorf("error while searching for manifest files: %w", err)
+	}
+	if len(manifestFiles) == 0 {
+		log.Warn("No manifest files found")
+		return nil
+	}
+
+	for _, filePath := range manifestFiles {
+		log.WithField("manifest_path", filePath).Info("Found manifest file")
+		if err := manifest.ProcessManifest(filePath, cfg.BlobDir, cfg.Destinations, log); err != nil {
+			log.WithError(err).WithField("manifest_path", filePath).Error("Failed to process manifest")
+			// Continue processing other manifests
+		}
+	}
+	
+	log.Info("ollama-sync complete.")
+	return nil
+}
+
+func runSync(cfg *config.Config, log *logrus.Logger) error {
+	log.Infof("Running on %s", runtime.GOOS)
+	log.WithFields(logrus.Fields{
+		"manifest_dir": cfg.ManifestDir,
+		"blob_dir":     cfg.BlobDir,
+		"destinations": cfg.Destinations,
+	}).Info("Application directories determined from config")
+
+	return processManifests(cfg, log)
 }
 
 func main() {
@@ -51,45 +99,14 @@ func main() {
 
 			cfg, err := config.LoadConfig()
 			if err != nil {
-				log.WithError(err).Error("Failed to load configuration")
-				os.Exit(1)
+				log.WithError(err).Fatal("Failed to load configuration")
 			}
 
-			if manifestDir != "" {
-				cfg.ManifestDir = manifestDir
-			}
-			if blobDir != "" {
-				cfg.BlobDir = blobDir
-			}
-			if destinations != "" {
-    			cfg.Destinations = strings.Split(destinations, ",")
-			}
+			applyCommandLineOverrides(cfg)
 
-			log.Infof("Running on %s", runtime.GOOS)
-			log.WithFields(logrus.Fields{
-				"manifest_dir": cfg.ManifestDir,
-				"blob_dir":     cfg.BlobDir,
-				"destinations": cfg.Destinations,
-			}).Info("Application directories determined from config")
-
-			manifestFiles, err := manifest.FindManifestFiles(cfg.ManifestDir)
-			if err != nil {
-				log.WithError(err).Error("Error while searching for manifest files")
-				os.Exit(1)
+			if err := runSync(cfg, log); err != nil {
+				log.WithError(err).Fatal("Sync operation failed")
 			}
-			if len(manifestFiles) == 0 {
-				log.Warn("No manifest files found")
-				os.Exit(0)
-			}
-
-			for _, filePath := range manifestFiles {
-				log.WithField("manifest_path", filePath).Info("Found manifest file")
-				if err := manifest.ProcessManifest(filePath, cfg.BlobDir, cfg.Destinations, log); err != nil {
-					log.WithError(err).WithField("manifest_path", filePath).Error("Failed to process manifest")
-				}
-			}
-
-			log.Info("ollama-sync complete.")
 		},
 	}
 
