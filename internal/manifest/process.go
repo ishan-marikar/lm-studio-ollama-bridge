@@ -52,6 +52,7 @@ func ProcessManifest(manifestPath, blobDir string, destDirs []string, logger *lo
 	}
 
 	modelName := filepath.Base(filepath.Dir(manifestPath))
+	tag := filepath.Base(manifestPath) // e.g., "q8_0" - the Ollama tag
 
 	for _, destDir := range destDirs {
 		if err := os.MkdirAll(destDir, 0755); err != nil {
@@ -63,8 +64,13 @@ func ProcessManifest(manifestPath, blobDir string, destDirs []string, logger *lo
 			return fmt.Errorf("failed to create model directory %s: %w", modelDir, err)
 		}
 
+		fileType := modelConfig.FileType
+		if fileType == "unknown" || fileType == "" {
+			fileType = tag // Use Ollama tag instead
+		}
+
 		symlinkName := filepath.Join(modelDir,
-			fmt.Sprintf("%s-%s-%s.%s", modelName, modelConfig.ModelType, modelConfig.FileType, modelConfig.ModelFormat))
+			fmt.Sprintf("%s-%s-%s.%s", modelName, modelConfig.ModelType, fileType, modelConfig.ModelFormat))
 
 		if _, err := os.Lstat(symlinkName); err == nil {
 			if err := os.Remove(symlinkName); err != nil {

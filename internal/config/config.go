@@ -36,13 +36,13 @@ func LoadConfig() (*Config, error) {
 		}
 		// Use Windows conventions.
 		configDir = filepath.Join(appData, "ollama-sync")
-		defaultManifest = filepath.Join(appData, "Ollama", "models", "manifests", "registry.ollama.ai")
+		defaultManifest = filepath.Join(appData, "Ollama", "models", "manifests")
 		defaultBlob = filepath.Join(appData, "Ollama", "models", "blobs")
 		defaultDest = filepath.Join(localAppData, "lm-studio", "ollama")
 	} else {
 		// POSIX-style defaults.
 		configDir = filepath.Join(homeDir, ".config", "ollama-sync")
-		defaultManifest = filepath.Join(homeDir, ".ollama", "models", "manifests", "registry.ollama.ai")
+		defaultManifest = filepath.Join(homeDir, ".ollama", "models", "manifests")
 		defaultBlob = filepath.Join(homeDir, ".ollama", "models", "blobs")
 		defaultDest = filepath.Join(homeDir, ".cache", "lm-studio", "models", "ollama")
 	}
