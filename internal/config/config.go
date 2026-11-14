@@ -77,6 +77,15 @@ destinations:
 		return nil, fmt.Errorf("unable to decode config into struct: %w", err)
 	}
 
+	legacyManifest := filepath.Join(defaultManifest, "registry.ollama.ai")
+	if filepath.Clean(cfg.ManifestDir) == legacyManifest {
+		logrus.WithFields(logrus.Fields{
+			"config_file":  configFile,
+			"manifest_dir": defaultManifest,
+		}).Info("Scanning all registries; manifest_dir in config still points at registry.ollama.ai and can be updated")
+		cfg.ManifestDir = defaultManifest
+	}
+
 	logrus.WithFields(logrus.Fields{
 		"manifest_dir":  cfg.ManifestDir,
 		"blob_dir":      cfg.BlobDir,
