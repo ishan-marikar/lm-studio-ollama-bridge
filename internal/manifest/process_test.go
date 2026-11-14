@@ -104,3 +104,72 @@ func TestManifestWithoutGGUFLayerIsSkipped(t *testing.T) {
 		t.Fatalf("expected nothing created for non-GGUF model, got err=%v", err)
 	}
 }
+
+func TestModelNameFromManifestPath(t *testing.T) {
+	root := filepath.Join("home", ".ollama", "models", "manifests")
+	cases := map[string]string{
+		filepath.Join(root, "registry.ollama.ai", "library", "llama3", "latest"):  "llama3",
+		filepath.Join(root, "registry.ollama.ai", "someuser", "llama3", "latest"): "someuser-llama3",
+		filepath.Join(root, "hf.co", "someuser", "llama3", "latest"):              "hf.co-someuser-llama3",
+	}
+	for path, want := range cases {
+		if got := modelNameFromManifestPath(path); got != want {
+			t.Errorf("modelNameFromManifestPath(%q) = %q; want %q", path, got, want)
+		}
+	}
+}
+
+func TestSameModelNameFromDifferentRegistriesDoesNotCollide(t *testing.T) {
+	f := newFixture(t, true)
+	hfManifest := filepath.Join(filepath.Dir(filepath.Dir(filepath.Dir(filepath.Dir(f.manifestPath)))),
+		"hf.co", "someuser", "mymodel", "q8_0")
+	hfBlob := filepath.Join(f.blobDir, "sha256-hfweights")
+	mustWrite(t, hfBlob, "hf weights")
+	mustWrite(t, hfManifest,
+		`{"config":{"digest":"sha256:cfg"},"layers":[{"mediaType":"application/vnd.ollama.image.model","digest":"sha256:hfweights"}]}`)
+
+	f.process(t)
+	if err := ProcessManifest(hfManifest, f.blobDir, []string{f.destDir}, quietLogger()); err != nil {
+		t.Fatal(err)
+	}
+
+	if target, _ := os.Readlink(f.symlinkPath); target != f.modelBlob {
+		t.Fatalf("library symlink points to %q; want %q", target, f.modelBlob)
+	}
+	hfLink := filepath.Join(f.destDir, "hf.co-someuser-mymodel", "hf.co-someuser-mymodel-7B-Q8_0.gguf")
+	if target, _ := os.Readlink(hfLink); target != hfBlob {
+		t.Fatalf("hf.co symlink points to %q; want %q", target, hfBlob)
+	}
+}
+
+func TestFallbackCopyIsLeftAlone(t *testing.T) {
+	f := newFixture(t, true)
+	if err := copyFile(f.modelBlob, mustMkdirFor(t, f.symlinkPath)); err != nil {
+		t.Fatal(err)
+	}
+	f.process(t)
+	info, err := os.Lstat(f.symlinkPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if info.Mode()&os.ModeSymlink != 0 {
+		t.Fatal("up-to-date fallback copy was replaced")
+	}
+}
+
+func TestStaleFallbackCopyIsReplaced(t *testing.T) {
+	f := newFixture(t, true)
+	mustWrite(t, f.symlinkPath, "an older, different-sized blob")
+	f.process(t)
+	if target, _ := os.Readlink(f.symlinkPath); target != f.modelBlob {
+		t.Fatalf("stale copy not replaced: points to %q", target)
+	}
+}
+
+func mustMkdirFor(t *testing.T, path string) string {
+	t.Helper()
+	if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
+		t.Fatal(err)
+	}
+	return path
+}
