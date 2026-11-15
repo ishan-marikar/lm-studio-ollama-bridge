@@ -72,7 +72,7 @@ func main() {
 				"destinations": cfg.Destinations,
 			}).Info("Application directories determined from config")
 
-			manifestFiles, err := manifest.FindManifestFiles(cfg.ManifestDir)
+			manifestFiles, err := manifest.FindModelManifests(cfg.ManifestDir)
 			if err != nil {
 				log.WithError(err).Error("Error while searching for manifest files")
 				os.Exit(1)
@@ -83,7 +83,7 @@ func main() {
 			}
 
 			for _, filePath := range manifestFiles {
-				log.WithField("manifest_path", filePath).Info("Found manifest file")
+				log.WithField("manifest_path", filePath).Debug("Found manifest file")
 				if err := manifest.ProcessManifest(filePath, cfg.BlobDir, cfg.Destinations, log); err != nil {
 					log.WithError(err).WithField("manifest_path", filePath).Error("Failed to process manifest")
 				}

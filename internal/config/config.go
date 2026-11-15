@@ -36,13 +36,13 @@ func LoadConfig() (*Config, error) {
 		}
 		// Use Windows conventions.
 		configDir = filepath.Join(appData, "ollama-sync")
-		defaultManifest = filepath.Join(appData, "Ollama", "models", "manifests", "registry.ollama.ai")
+		defaultManifest = filepath.Join(appData, "Ollama", "models", "manifests")
 		defaultBlob = filepath.Join(appData, "Ollama", "models", "blobs")
 		defaultDest = filepath.Join(localAppData, "lm-studio", "ollama")
 	} else {
 		// POSIX-style defaults.
 		configDir = filepath.Join(homeDir, ".config", "ollama-sync")
-		defaultManifest = filepath.Join(homeDir, ".ollama", "models", "manifests", "registry.ollama.ai")
+		defaultManifest = filepath.Join(homeDir, ".ollama", "models", "manifests")
 		defaultBlob = filepath.Join(homeDir, ".ollama", "models", "blobs")
 		defaultDest = filepath.Join(homeDir, ".cache", "lm-studio", "models", "ollama")
 	}
@@ -75,6 +75,15 @@ destinations:
 	var cfg Config
 	if err := viper.Unmarshal(&cfg); err != nil {
 		return nil, fmt.Errorf("unable to decode config into struct: %w", err)
+	}
+
+	legacyManifest := filepath.Join(defaultManifest, "registry.ollama.ai")
+	if filepath.Clean(cfg.ManifestDir) == legacyManifest {
+		logrus.WithFields(logrus.Fields{
+			"config_file":  configFile,
+			"manifest_dir": defaultManifest,
+		}).Info("Scanning all registries; manifest_dir in config still points at registry.ollama.ai and can be updated")
+		cfg.ManifestDir = defaultManifest
 	}
 
 	logrus.WithFields(logrus.Fields{

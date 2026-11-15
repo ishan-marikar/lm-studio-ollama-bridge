@@ -14,11 +14,24 @@ import (
 
 // ProcessManifest reads and processes a single manifest file and creates symlinks in all destination directories.
 func ProcessManifest(manifestPath, blobDir string, destDirs []string, logger *logrus.Logger) error {
-	logger.WithField("manifest_path", manifestPath).Info("Starting processing of manifest")
+	logger.WithField("manifest_path", manifestPath).Debug("Starting processing of manifest")
 
 	data, err := os.ReadFile(manifestPath)
 	if err != nil {
 		return fmt.Errorf("failed to read manifest file: %w", err)
+	}
+	if isDowngradeGuard(manifestPath, data) {
+		logger.WithField("manifest_path", manifestPath).Debug("Skipping Ollama downgrade guard tag")
+		return nil
+	}
+
+	data, ok, err := resolveManifestList(data, blobDir)
+	if err != nil {
+		return err
+	}
+	if !ok {
+		logger.WithField("manifest_path", manifestPath).Debug("Skipping manifest list with no GGUF variant")
+		return nil
 	}
 
 	var m Manifest
@@ -38,7 +51,9 @@ func ProcessManifest(manifestPath, blobDir string, destDirs []string, logger *lo
 		}
 	}
 	if modelFile == "" {
-		return fmt.Errorf("no valid model file found in manifest")
+		// Not a GGUF model (e.g. an image model stored as raw tensors): nothing to link.
+		logger.WithField("manifest_path", manifestPath).Debug("Skipping manifest with no GGUF model layer")
+		return nil
 	}
 
 	modelConfigData, err := os.ReadFile(modelConfigPath)
@@ -51,7 +66,8 @@ func ProcessManifest(manifestPath, blobDir string, destDirs []string, logger *lo
 		return fmt.Errorf("failed to unmarshal model config JSON: %w", err)
 	}
 
-	modelName := filepath.Base(filepath.Dir(manifestPath))
+	modelName := modelNameFromManifestPath(manifestPath)
+	tag := filepath.Base(manifestPath)
 
 	for _, destDir := range destDirs {
 		if err := os.MkdirAll(destDir, 0755); err != nil {
@@ -63,14 +79,23 @@ func ProcessManifest(manifestPath, blobDir string, destDirs []string, logger *lo
 			return fmt.Errorf("failed to create model directory %s: %w", modelDir, err)
 		}
 
-		symlinkName := filepath.Join(modelDir,
-			fmt.Sprintf("%s-%s-%s.%s", modelName, modelConfig.ModelType, modelConfig.FileType, modelConfig.ModelFormat))
+		fileType := modelConfig.FileType
+		if fileType == "unknown" || fileType == "" {
+			fileType = tag
+		}
 
+		symlinkName := filepath.Join(modelDir,
+			fmt.Sprintf("%s-%s-%s.%s", modelName, modelConfig.ModelType, fileType, modelConfig.ModelFormat))
+
+		if isUpToDate(symlinkName, modelFile) {
+			logger.WithField("symlink", symlinkName).Debug("Symlink already up to date")
+			continue
+		}
 		if _, err := os.Lstat(symlinkName); err == nil {
 			if err := os.Remove(symlinkName); err != nil {
 				logger.WithField("symlink", symlinkName).Warn("Failed to remove existing symlink")
 			} else {
-				logger.WithField("symlink", symlinkName).Info("Removed existing symlink")
+				logger.WithField("symlink", symlinkName).Info("Removed stale symlink")
 			}
 		}
 
@@ -103,10 +128,51 @@ func ProcessManifest(manifestPath, blobDir string, destDirs []string, logger *lo
 		logger.WithFields(logrus.Fields{
 			"model_file": modelFile,
 			"symlink":    symlinkName,
-		}).Info("Completed symlink creation process")
+		}).Debug("Completed symlink creation process")
 	}
 
 	return nil
+}
+
+// modelNameFromManifestPath derives the destination folder name from a
+// manifests/<registry>/<namespace>/<model>/<tag> path. Models from the default
+// registry and library namespace keep their bare name; others are prefixed so
+// that e.g. hf.co/user/llama3 and library/llama3 don't share a folder.
+func modelNameFromManifestPath(manifestPath string) string {
+	modelDir := filepath.Dir(manifestPath)
+	namespaceDir := filepath.Dir(modelDir)
+	registry := filepath.Base(filepath.Dir(namespaceDir))
+	namespace := filepath.Base(namespaceDir)
+
+	var parts []string
+	if !isDefaultRegistry(registry) {
+		parts = append(parts, registry)
+	}
+	if !isDefaultRegistry(registry) || namespace != "library" {
+		parts = append(parts, namespace)
+	}
+	return strings.Join(append(parts, filepath.Base(modelDir)), "-")
+}
+
+// isUpToDate reports whether linkPath already provides modelFile, either as a
+// symlink to it or as the full-size copy made by the Windows fallback.
+func isUpToDate(linkPath, modelFile string) bool {
+	info, err := os.Lstat(linkPath)
+	if err != nil {
+		return false
+	}
+	if info.Mode()&os.ModeSymlink != 0 {
+		target, err := os.Readlink(linkPath)
+		return err == nil && target == modelFile
+	}
+	if !info.Mode().IsRegular() {
+		return false
+	}
+	blob, err := os.Stat(modelFile)
+	if err != nil {
+		return false
+	}
+	return info.Size() == blob.Size() && !info.ModTime().Before(blob.ModTime())
 }
 
 func copyFile(src, dst string) error {
