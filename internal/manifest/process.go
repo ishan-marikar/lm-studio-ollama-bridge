@@ -21,6 +21,15 @@ func ProcessManifest(manifestPath, blobDir string, destDirs []string, logger *lo
 		return fmt.Errorf("failed to read manifest file: %w", err)
 	}
 
+	data, ok, err := resolveManifestList(data, blobDir)
+	if err != nil {
+		return err
+	}
+	if !ok {
+		logger.WithField("manifest_path", manifestPath).Debug("Skipping manifest list with no GGUF variant")
+		return nil
+	}
+
 	var m Manifest
 	if err := json.Unmarshal(data, &m); err != nil {
 		return fmt.Errorf("failed to unmarshal manifest JSON: %w", err)
@@ -132,10 +141,10 @@ func modelNameFromManifestPath(manifestPath string) string {
 	namespace := filepath.Base(namespaceDir)
 
 	var parts []string
-	if registry != "registry.ollama.ai" {
+	if !isDefaultRegistry(registry) {
 		parts = append(parts, registry)
 	}
-	if registry != "registry.ollama.ai" || namespace != "library" {
+	if !isDefaultRegistry(registry) || namespace != "library" {
 		parts = append(parts, namespace)
 	}
 	return strings.Join(append(parts, filepath.Base(modelDir)), "-")

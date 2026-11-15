@@ -72,7 +72,7 @@ func main() {
 				"destinations": cfg.Destinations,
 			}).Info("Application directories determined from config")
 
-			manifestFiles, err := manifest.FindManifestFiles(cfg.ManifestDir)
+			manifestFiles, err := manifest.FindModelManifests(cfg.ManifestDir)
 			if err != nil {
 				log.WithError(err).Error("Error while searching for manifest files")
 				os.Exit(1)
