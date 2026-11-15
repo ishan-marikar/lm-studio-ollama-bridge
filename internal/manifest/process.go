@@ -20,6 +20,10 @@ func ProcessManifest(manifestPath, blobDir string, destDirs []string, logger *lo
 	if err != nil {
 		return fmt.Errorf("failed to read manifest file: %w", err)
 	}
+	if isDowngradeGuard(manifestPath, data) {
+		logger.WithField("manifest_path", manifestPath).Debug("Skipping Ollama downgrade guard tag")
+		return nil
+	}
 
 	data, ok, err := resolveManifestList(data, blobDir)
 	if err != nil {
