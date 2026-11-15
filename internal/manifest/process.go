@@ -132,10 +132,10 @@ func modelNameFromManifestPath(manifestPath string) string {
 	namespace := filepath.Base(namespaceDir)
 
 	var parts []string
-	if registry != "registry.ollama.ai" {
+	if !isDefaultRegistry(registry) {
 		parts = append(parts, registry)
 	}
-	if registry != "registry.ollama.ai" || namespace != "library" {
+	if !isDefaultRegistry(registry) || namespace != "library" {
 		parts = append(parts, namespace)
 	}
 	return strings.Join(append(parts, filepath.Base(modelDir)), "-")
