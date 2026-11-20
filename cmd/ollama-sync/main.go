@@ -82,11 +82,32 @@ func main() {
 				os.Exit(0)
 			}
 
+			keep := map[string]bool{}
+			allProcessed := true
 			for _, filePath := range manifestFiles {
 				log.WithField("manifest_path", filePath).Debug("Found manifest file")
-				if err := manifest.ProcessManifest(filePath, cfg.BlobDir, cfg.Destinations, log); err != nil {
+				links, err := manifest.ProcessManifest(filePath, cfg.BlobDir, cfg.Destinations, log)
+				if err != nil {
 					log.WithError(err).WithField("manifest_path", filePath).Error("Failed to process manifest")
+					allProcessed = false
+					continue
 				}
+				for _, link := range links {
+					keep[link] = true
+				}
+			}
+
+			// Prune only after a clean run: a manifest that failed to process would
+			// otherwise lose its (still valid) link.
+			if allProcessed {
+				removed, err := manifest.PruneStaleLinks(cfg.Destinations, cfg.BlobDir, keep, log)
+				if err != nil {
+					log.WithError(err).Error("Failed to prune stale links")
+				} else if removed > 0 {
+					log.Infof("Removed %d stale link(s) with no current manifest", removed)
+				}
+			} else {
+				log.Warn("Some manifests failed to process; not pruning stale links this run")
 			}
 
 			log.Info("ollama-sync complete.")

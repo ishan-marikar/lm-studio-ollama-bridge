@@ -13,30 +13,32 @@ import (
 )
 
 // ProcessManifest reads and processes a single manifest file and creates symlinks in all destination directories.
-func ProcessManifest(manifestPath, blobDir string, destDirs []string, logger *logrus.Logger) error {
+// It returns the link paths it created or found up to date (none for manifests it skips), so that
+// a full sync can prune links no manifest accounts for (see PruneStaleLinks).
+func ProcessManifest(manifestPath, blobDir string, destDirs []string, logger *logrus.Logger) ([]string, error) {
 	logger.WithField("manifest_path", manifestPath).Debug("Starting processing of manifest")
 
 	data, err := os.ReadFile(manifestPath)
 	if err != nil {
-		return fmt.Errorf("failed to read manifest file: %w", err)
+		return nil, fmt.Errorf("failed to read manifest file: %w", err)
 	}
 	if isDowngradeGuard(manifestPath, data) {
 		logger.WithField("manifest_path", manifestPath).Debug("Skipping Ollama downgrade guard tag")
-		return nil
+		return nil, nil
 	}
 
 	data, ok, err := resolveManifestList(data, blobDir)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	if !ok {
 		logger.WithField("manifest_path", manifestPath).Debug("Skipping manifest list with no GGUF variant")
-		return nil
+		return nil, nil
 	}
 
 	var m Manifest
 	if err := json.Unmarshal(data, &m); err != nil {
-		return fmt.Errorf("failed to unmarshal manifest JSON: %w", err)
+		return nil, fmt.Errorf("failed to unmarshal manifest JSON: %w", err)
 	}
 
 	configDigest := NormalizeDigest(m.Config.Digest)
@@ -53,30 +55,31 @@ func ProcessManifest(manifestPath, blobDir string, destDirs []string, logger *lo
 	if modelFile == "" {
 		// Not a GGUF model (e.g. an image model stored as raw tensors): nothing to link.
 		logger.WithField("manifest_path", manifestPath).Debug("Skipping manifest with no GGUF model layer")
-		return nil
+		return nil, nil
 	}
 
 	modelConfigData, err := os.ReadFile(modelConfigPath)
 	if err != nil {
-		return fmt.Errorf("failed to read model config file: %w", err)
+		return nil, fmt.Errorf("failed to read model config file: %w", err)
 	}
 
 	var modelConfig ModelConfig
 	if err := json.Unmarshal(modelConfigData, &modelConfig); err != nil {
-		return fmt.Errorf("failed to unmarshal model config JSON: %w", err)
+		return nil, fmt.Errorf("failed to unmarshal model config JSON: %w", err)
 	}
 
 	modelName := modelNameFromManifestPath(manifestPath)
 	tag := filepath.Base(manifestPath)
 
+	var links []string
 	for _, destDir := range destDirs {
 		if err := os.MkdirAll(destDir, 0755); err != nil {
-			return fmt.Errorf("failed to create destination directory %s: %w", destDir, err)
+			return nil, fmt.Errorf("failed to create destination directory %s: %w", destDir, err)
 		}
 
 		modelDir := filepath.Join(destDir, modelName)
 		if err := os.MkdirAll(modelDir, 0755); err != nil {
-			return fmt.Errorf("failed to create model directory %s: %w", modelDir, err)
+			return nil, fmt.Errorf("failed to create model directory %s: %w", modelDir, err)
 		}
 
 		fileType := modelConfig.FileType
@@ -89,6 +92,7 @@ func ProcessManifest(manifestPath, blobDir string, destDirs []string, logger *lo
 
 		if isUpToDate(symlinkName, modelFile) {
 			logger.WithField("symlink", symlinkName).Debug("Symlink already up to date")
+			links = append(links, symlinkName)
 			continue
 		}
 		if _, err := os.Lstat(symlinkName); err == nil {
@@ -105,7 +109,7 @@ func ProcessManifest(manifestPath, blobDir string, destDirs []string, logger *lo
 				logger.WithError(err).Warn("Symlink creation failed on Windows; attempting file copy as fallback")
 				if copyErr := copyFile(modelFile, symlinkName); copyErr != nil {
 					logger.WithError(copyErr).Error("Failed to create file copy as fallback")
-					return fmt.Errorf("failed to create file copy as fallback: %w", copyErr)
+					return nil, fmt.Errorf("failed to create file copy as fallback: %w", copyErr)
 				}
 			} else {
 				logger.WithField("symlink", symlinkName).Info("Successfully created symlink on Windows")
@@ -113,7 +117,7 @@ func ProcessManifest(manifestPath, blobDir string, destDirs []string, logger *lo
 		} else {
 			if err := os.Symlink(modelFile, symlinkName); err != nil {
 				logger.WithError(err).Error("Failed to create symbolic link")
-				return fmt.Errorf("failed to create symbolic link from %s to %s: %w", modelFile, symlinkName, err)
+				return nil, fmt.Errorf("failed to create symbolic link from %s to %s: %w", modelFile, symlinkName, err)
 			} else {
 				logger.WithField("symlink", symlinkName).Info("Successfully created symbolic link")
 			}
@@ -122,16 +126,17 @@ func ProcessManifest(manifestPath, blobDir string, destDirs []string, logger *lo
 		// Verify that the symlink exists
 		if _, err := os.Lstat(symlinkName); err != nil {
 			logger.WithError(err).Error("Symlink does not exist after creation")
-			return fmt.Errorf("symlink does not exist after creation: %w", err)
+			return nil, fmt.Errorf("symlink does not exist after creation: %w", err)
 		}
 
 		logger.WithFields(logrus.Fields{
 			"model_file": modelFile,
 			"symlink":    symlinkName,
 		}).Debug("Completed symlink creation process")
+		links = append(links, symlinkName)
 	}
 
-	return nil
+	return links, nil
 }
 
 // modelNameFromManifestPath derives the destination folder name from a
