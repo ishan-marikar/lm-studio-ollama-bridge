@@ -35,7 +35,7 @@ func listFixture(t *testing.T, runners ...string) (manifestPath, blobDir, destDi
 
 func linkedWeights(t *testing.T, manifestPath, blobDir, destDir string) string {
 	t.Helper()
-	if err := ProcessManifest(manifestPath, blobDir, []string{destDir}, quietLogger()); err != nil {
+	if _, err := ProcessManifest(manifestPath, blobDir, []string{destDir}, quietLogger()); err != nil {
 		t.Fatalf("ProcessManifest: %v", err)
 	}
 	target, err := os.Readlink(filepath.Join(destDir, "qwen3.5", "qwen3.5-9B-Q4_K_M.gguf"))

@@ -58,7 +58,7 @@ func quietLogger() *logrus.Logger {
 
 func (f fixture) process(t *testing.T) {
 	t.Helper()
-	if err := ProcessManifest(f.manifestPath, f.blobDir, []string{f.destDir}, quietLogger()); err != nil {
+	if _, err := ProcessManifest(f.manifestPath, f.blobDir, []string{f.destDir}, quietLogger()); err != nil {
 		t.Fatalf("ProcessManifest: %v", err)
 	}
 }
@@ -129,7 +129,7 @@ func TestSameModelNameFromDifferentRegistriesDoesNotCollide(t *testing.T) {
 		`{"config":{"digest":"sha256:cfg"},"layers":[{"mediaType":"application/vnd.ollama.image.model","digest":"sha256:hfweights"}]}`)
 
 	f.process(t)
-	if err := ProcessManifest(hfManifest, f.blobDir, []string{f.destDir}, quietLogger()); err != nil {
+	if _, err := ProcessManifest(hfManifest, f.blobDir, []string{f.destDir}, quietLogger()); err != nil {
 		t.Fatal(err)
 	}
 

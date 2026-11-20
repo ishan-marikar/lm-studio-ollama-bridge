@@ -28,7 +28,7 @@ func guardFixture(t *testing.T, tag string) (manifestPath, blobDir, destDir stri
 func TestDowngradeGuardTagIsNotLinked(t *testing.T) {
 	sum := sha256.Sum256([]byte(guardManifest))
 	manifestPath, blobDir, destDir := guardFixture(t, hex.EncodeToString(sum[:]))
-	if err := ProcessManifest(manifestPath, blobDir, []string{destDir}, quietLogger()); err != nil {
+	if _, err := ProcessManifest(manifestPath, blobDir, []string{destDir}, quietLogger()); err != nil {
 		t.Fatalf("ProcessManifest: %v", err)
 	}
 	if _, err := os.Stat(filepath.Join(destDir, "llamacpp")); !os.IsNotExist(err) {
@@ -38,7 +38,7 @@ func TestDowngradeGuardTagIsNotLinked(t *testing.T) {
 
 func TestModelNamedLlamaCppIsStillLinked(t *testing.T) {
 	manifestPath, blobDir, destDir := guardFixture(t, "latest")
-	if err := ProcessManifest(manifestPath, blobDir, []string{destDir}, quietLogger()); err != nil {
+	if _, err := ProcessManifest(manifestPath, blobDir, []string{destDir}, quietLogger()); err != nil {
 		t.Fatalf("ProcessManifest: %v", err)
 	}
 	if _, err := os.Lstat(filepath.Join(destDir, "llamacpp", "llamacpp-9B-Q4_K_M.gguf")); err != nil {

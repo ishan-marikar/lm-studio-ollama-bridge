@@ -92,7 +92,10 @@ The tool will:
    <model-name>-<model-type>-<file-type>.<model-format>
    ```
 
-4. **Log:** Output detailed logs about the processing of each manifest, including any errors.
+4. **Prune:** Remove links it made earlier that no current manifest accounts for (symlinks into the
+   Ollama blob directory, e.g. for a deleted tag whose blob another tag still uses). Links to other
+   places and regular files are never touched, and nothing is pruned if any manifest failed to process.
+5. **Log:** Output detailed logs about the processing of each manifest, including any errors.
 
 After running, your LM Studio models directory will be updated with the latest symbolic links, ensuring that external applications have immediate access to your models.
 
